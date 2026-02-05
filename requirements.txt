@@ -1,0 +1,8 @@
+yfinance
+pandas
+scikit-learn
+textblob
+feedparser
+numpy
+requests
+lxml
