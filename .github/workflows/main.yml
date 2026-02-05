@@ -3,7 +3,7 @@ name: Daily Gold Alert
 on:
   schedule:
     # Daily morning at approx 10:00 AM India Time
-    - cron: '30 4 * * *'
+    - cron: '30 3 * * *'
   workflow_dispatch: # Button to run manually
 
 jobs:
