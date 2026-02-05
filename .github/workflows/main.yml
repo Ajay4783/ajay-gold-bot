@@ -1,0 +1,29 @@
+name: Daily Gold Alert
+
+on:
+  schedule:
+    # Daily morning at approx 10:00 AM India Time
+    - cron: '30 4 * * *'
+  workflow_dispatch: # Button to run manually
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install libraries
+        run: pip install -r requirements.txt
+
+      - name: Run Gold Bot
+        env:
+          MY_BOT_TOKEN: ${{ secrets.MY_BOT_TOKEN }}
+          MY_CHANNEL_NAME: ${{ secrets.MY_CHANNEL_NAME }}
+        run: python cloud_bot.py
