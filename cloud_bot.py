@@ -8,11 +8,14 @@ import numpy as np
 import requests
 import os
 
-# --- 1. SETTINGS (GitHub Secrets-la irunthu edukum) ---
-# Idhu mukkiyam: Code-la token irukka koodathu.
+# --- 1. SETTINGS (Strictly copied from Gold App) ---
+# Token & Channel GitHub Secrets-la irunthu edukkum
 MY_BOT_TOKEN = os.environ.get("MY_BOT_TOKEN")
 MY_CHANNEL_NAME = os.environ.get("MY_CHANNEL_NAME")
+
+# App-la neenga vecha same settings:
 YEARS = 2
+TAX_PERCENTAGE = 9.2 
 
 print("🤖 Cloud Bot Starting...")
 
@@ -34,7 +37,7 @@ def send_telegram_alert(message):
     except Exception as e:
         print(f"⚠️ Network Error: {e}")
 
-# --- 3. FETCH DATA ---
+# --- 3. FETCH DATA (Same as Gold App) ---
 print("📊 Fetching Gold Data...")
 today = date.today().strftime("%Y-%m-%d")
 start_date = (date.today() - timedelta(days=YEARS*365)).strftime("%Y-%m-%d")
@@ -60,7 +63,7 @@ try:
         print("❌ Not enough data to predict.")
         exit()
 
-    # --- 4. AI TRAINING ---
+    # --- 4. AI TRAINING (Same Logic) ---
     print("🧠 Training AI Model...")
     df['Target'] = df['Gold'].shift(-1)
     df.dropna(inplace=True)
@@ -68,6 +71,7 @@ try:
     X = df[['Gold', 'Silver', 'Oil', 'SMA_15']].values
     y = df['Target'].values
 
+    # Same Random State ensures SAME result as Laptop
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X, y)
 
@@ -84,16 +88,19 @@ try:
         if sentiments: avg_sentiment = np.mean(sentiments)
     except: pass
 
-    # --- 6. DECISION LOGIC ---
-    total_change = trend_pct + (0.002 if avg_sentiment > 0.1 else -0.002 if avg_sentiment < -0.1 else 0)
+    # --- 6. DECISION LOGIC (Exact Copy) ---
+    news_impact = 0.002 if avg_sentiment > 0.1 else -0.002 if avg_sentiment < -0.1 else 0
+    total_change = trend_pct + news_impact
     
     # Calculate Price (Approx INR)
     try: usdinr = yf.download('INR=X', period='1d', progress=False)['Close'].iloc[-1].item()
     except: usdinr = 86.50
     
-    price_today = ((last_row['Gold'] * usdinr) / 31.1035) * 1.092 # +9.2% Tax
+    tax_factor = 1 + (TAX_PERCENTAGE / 100)
+    price_today = ((last_row['Gold'] * usdinr) / 31.1035) * tax_factor
     price_tomorrow = price_today * (1 + total_change)
 
+    # STRICT LOGIC CHECK (Same as App)
     if total_change > 0.001:
         signal, icon, advice = "BUY", "🟢", "Strong Upside! Accumulate."
     elif total_change < -0.001:
