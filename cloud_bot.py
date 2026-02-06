@@ -353,6 +353,9 @@ with tab3:
         st.success(f"🏆 **XGBoost** wins today! It is being used for prediction.")
     else:
         st.success(f"🏆 **Random Forest** wins today! It is being used for prediction.")
+
+    pred_rf = model_rf.predict(last_values)[0]
+    pred_xgb = model_xgb.predict(last_values)[0]
     
     chart_df = pd.DataFrame({
         "Model": ["Random Forest", "XGBoost"],
@@ -360,3 +363,4 @@ with tab3:
     })
     fig_battle = px.bar(chart_df, x="Model", y="Predicted Gold Price ($)", color="Model", title="Model Price Prediction Comparison")
     st.plotly_chart(fig_battle, use_container_width=True)
+
