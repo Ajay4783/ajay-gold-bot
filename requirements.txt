@@ -1,8 +1,10 @@
+streamlit
 yfinance
 pandas
 scikit-learn
+xgboost
+plotly
 textblob
 feedparser
-numpy
 requests
-lxml
+numpy
