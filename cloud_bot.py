@@ -14,7 +14,7 @@ import requests
 import os
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Gold AI Pro Max", page_icon="🏆", layout="wide")
+st.set_page_config(page_title="Gold AI Sniper", page_icon="🎯", layout="wide")
 
 # ==========================================
 # 🔐 ADMIN SETTINGS (SECURE MODE)
@@ -27,8 +27,8 @@ except:
     MY_CHANNEL_NAME = "@ajay_gold_2026"
 
 # --- HEADER ---
-st.title("🏆 Gold Rate AI Predictor (Pro Version)")
-st.markdown("### 🤖 Advanced Analysis: Pro RSI, MACD & XGBoost")
+st.title("🎯 Gold Rate AI Predictor (Sniper Version)")
+st.markdown("### 🤖 Strategy: Bollinger Bands + VIX + Bonds + XGBoost")
 
 # --- TELEGRAM FUNCTION ---
 def send_telegram_alert(token, channel_id, message):
@@ -84,7 +84,7 @@ def get_live_gold_rate():
 
 live_price_today = get_live_gold_rate()
 
-# --- STEP 2: LOAD DATA (PRO RSI UPDATE) ---
+# --- STEP 2: LOAD DATA (ADDED BOLLINGER BANDS) ---
 @st.cache_data
 def load_data(years):
     today = date.today().strftime("%Y-%m-%d")
@@ -104,22 +104,41 @@ def load_data(years):
         except:
             return pd.DataFrame()
 
+    # Load All Global Metrics
     g_df = get_ticker_data('GC=F', 'Gold')
     s_df = get_ticker_data('SI=F', 'Silver')
     o_df = get_ticker_data('CL=F', 'Oil')
+    usd_df = get_ticker_data('DX-Y.NYB', 'USD_Index')
+    sp500_df = get_ticker_data('^GSPC', 'SP500')
+    vix_df = get_ticker_data('^VIX', 'VIX')
+    tnx_df = get_ticker_data('^TNX', 'Bond_Yield')
+    eur_df = get_ticker_data('EURUSD=X', 'EURUSD')
 
     if g_df.empty: return pd.DataFrame()
     
-    df = pd.concat([g_df, s_df, o_df], axis=1)
+    # Merge All Data
+    df = pd.concat([g_df, s_df, o_df, usd_df, sp500_df, vix_df, tnx_df, eur_df], axis=1)
     df.ffill(inplace=True) 
     df.bfill(inplace=True)
     df.dropna(inplace=True)
 
     if len(df) < 50: return pd.DataFrame()
 
+    # Feature Engineering
     df['SMA_15'] = df['Gold'].rolling(window=15).mean()
+    df['Month'] = df.index.month
     
-    # --- PRO RSI CALCULATION (Wilder's Method) ---
+    # --- NEW: BOLLINGER BANDS CALCULATION ---
+    # SMA 20 (Middle Band)
+    df['SMA_20'] = df['Gold'].rolling(window=20).mean()
+    # Standard Deviation (20 days)
+    df['std_dev'] = df['Gold'].rolling(window=20).std()
+    # Upper Band = SMA + 2*StdDev
+    df['BB_Upper'] = df['SMA_20'] + (2 * df['std_dev'])
+    # Lower Band = SMA - 2*StdDev
+    df['BB_Lower'] = df['SMA_20'] - (2 * df['std_dev'])
+    
+    # Pro RSI
     delta = df['Gold'].diff()
     gain = (delta.where(delta > 0, 0))
     loss = (-delta.where(delta < 0, 0))
@@ -128,6 +147,7 @@ def load_data(years):
     rs = avg_gain / avg_loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
+    # MACD
     ema12 = df['Gold'].ewm(span=12, adjust=False).mean()
     ema26 = df['Gold'].ewm(span=26, adjust=False).mean()
     df['MACD'] = ema12 - ema26
@@ -136,7 +156,7 @@ def load_data(years):
     df.dropna(inplace=True) 
     return df
 
-with st.spinner('🤖 AI is collecting data & checking XGBoost...'):
+with st.spinner('🤖 AI is calculating Bollinger Bands & Global Data...'):
     market_data = load_data(years)
 
 if market_data.empty or len(market_data) < 10:
@@ -148,7 +168,9 @@ df = market_data.copy()
 df['Target'] = df['Gold'].shift(-1)
 df.dropna(inplace=True)
 
-X = df[['Gold', 'Silver', 'Oil', 'SMA_15', 'RSI', 'MACD', 'Signal_Line']].values
+# UPDATED FEATURE LIST (Added BB_Upper, BB_Lower)
+feature_cols = ['Gold', 'Silver', 'Oil', 'USD_Index', 'SP500', 'VIX', 'Bond_Yield', 'EURUSD', 'SMA_15', 'RSI', 'MACD', 'Signal_Line', 'Month', 'BB_Upper', 'BB_Lower']
+X = df[feature_cols].values
 y = df['Target'].values
 
 x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -164,11 +186,17 @@ acc_xgb = model_xgb.score(x_test, y_test)
 best_model = model_rf if acc_rf > acc_xgb else model_xgb
 best_model_name = "RandomForest" if acc_rf > acc_xgb else "XGBoost"
 
+# Prepare Last Values for Prediction
 last_row = market_data.iloc[-1]
 last_values = np.array([[
     last_row['Gold'], last_row['Silver'], last_row['Oil'], 
-    last_row['SMA_15'], last_row['RSI'], last_row['MACD'], last_row['Signal_Line']
+    last_row['USD_Index'], last_row['SP500'],
+    last_row['VIX'], last_row['Bond_Yield'], last_row['EURUSD'],
+    last_row['SMA_15'], last_row['RSI'], last_row['MACD'], last_row['Signal_Line'],
+    last_row['Month'],
+    last_row['BB_Upper'], last_row['BB_Lower']
 ]])
+
 pred_usd = best_model.predict(last_values)[0]
 market_trend_pct = (pred_usd - last_row['Gold']) / last_row['Gold']
 
@@ -231,66 +259,65 @@ else:
     st.sidebar.info("No Profit / No Loss")
 
 # ==========================================
-# 🚀 DECISION LOGIC
+# 🚀 SNIPER DECISION LOGIC (Bollinger Bands)
 # ==========================================
 rsi_val = last_row['RSI']
 macd_val = last_row['MACD']
 signal_line_val = last_row['Signal_Line']
 sma_15 = last_row['SMA_15']
 current_price_usd = last_row['Gold']
+bb_upper = last_row['BB_Upper']
+bb_lower = last_row['BB_Lower']
 
 signal = "HOLD"
 signal_color = "orange"
 icon = "🟠"
 advice = "Market is choppy. Stay neutral."
 
-# --- AGGRESSIVE BUY ---
-if total_change_pct > 0:
-    if current_price_usd > sma_15:
-        signal = "BUY"
-        signal_color = "green"
-        icon = "🟢"
-        advice = "Strong Uptrend! AI & Trend aligned. BUY."
-    elif rsi_val < 70:
-        signal = "BUY"
-        signal_color = "green"
-        icon = "🟢"
-        advice = "AI predicts upside. Good entry."
+# --- BOLLINGER BAND STRATEGIES ---
 
-# --- MACD BREAKOUT BUY ---
-elif macd_val > signal_line_val and current_price_usd > sma_15:
+# 1. JACKPOT BUY: Price < Lower Band (Oversold/Cheap)
+if current_price_usd < bb_lower:
     signal = "BUY"
     signal_color = "green"
     icon = "🟢"
-    advice = "Technical Breakout (MACD Bullish). Trend Following."
+    advice = "🎯 SNIPER ENTRY! Price below Lower Band (Cheap)."
 
-# --- SELL SCENARIOS ---
+# 2. AGGRESSIVE BUY: Trend Up & AI Support
+elif total_change_pct > 0 and current_price_usd > sma_15:
+    signal = "BUY"
+    signal_color = "green"
+    icon = "🟢"
+    advice = "Trend Following. Price > SMA."
+
+# 3. JACKPOT SELL: Price > Upper Band (Overbought/Costly)
+elif current_price_usd > bb_upper:
+    signal = "SELL"
+    signal_color = "red"
+    icon = "🔴"
+    advice = "🎯 PROFIT BOOKING! Price hit Upper Band (Costly)."
+
+# 4. SELL SCENARIOS
 elif total_change_pct < -0.001:
     if current_price_usd < sma_15:
         signal = "SELL"
         signal_color = "red"
         icon = "🔴"
-        advice = "Downtrend confirmed. SELL."
-    elif rsi_val > 30:
+        advice = "Downtrend confirmed."
+    elif rsi_val > 70:
         signal = "SELL"
         signal_color = "red"
         icon = "🔴"
-        advice = "AI predicts drop. Exit positions."
-
-elif rsi_val > 80:
-     signal = "SELL"
-     signal_color = "red"
-     icon = "🔴"
-     advice = "Market Extremely Overbought (Risk High). Book Profit."
+        advice = "RSI Overbought. Exit."
 
 # ================= 4 TABS LOGIC =================
-tab1, tab2, tab3, tab4 = st.tabs(["🏠 Home", "📊 Insights", "🤖 Model Battle", "📉 Backtest"])
+tab1, tab2, tab3, tab4 = st.tabs(["🏠 Sniper Home", "📊 Charts & Data", "🤖 Model Battle", "📉 Backtest"])
 
-# --- TAB 1: HOME ---
+# --- TAB 1: SNIPER HOME ---
 with tab1:
     left_col, right_col = st.columns([2, 1.2])
     with left_col:
-        st.subheader("📊 Price Dashboard")
+        st.subheader("🎯 Sniper Dashboard")
         c1, c2, c3 = st.columns(3)
         c1.metric("Active Model", best_model_name)
         c2.metric("Market Mood", "Bullish 🐂" if avg_sentiment > 0 else "Bearish 🐻")
@@ -306,14 +333,13 @@ with tab1:
         # Telegram Logic
         last_signal_sent = get_last_signal()
         if signal != last_signal_sent:
-            with st.spinner(f"🚀 Signal Changed. Sending Auto-Alert..."):
+            with st.spinner(f"🚀 Sniper Signal! Sending Alert..."):
                 msg = f"""
-🏆 *Ajay Gold Tips Update* 🏆
+🎯 *Ajay Gold Sniper Alert* 🎯
 
 📡 *Signal:* {icon} *{signal}*
 💰 *Price:* ₹{price_tomorrow:.2f}
-🤖 *Model:* {best_model_name}
-📉 *Advice:* {advice}
+📉 *Logic:* {advice}
 """
                 success, status_msg = send_telegram_alert(MY_BOT_TOKEN, MY_CHANNEL_NAME, msg)
                 if success:
@@ -322,60 +348,56 @@ with tab1:
                 elif "Token Missing" in status_msg:
                     st.warning("⚠️ Alert NOT sent. Deploy to Cloud to enable Telegram.")
         
-        p1, p2 = st.columns(2)
-        p1.info(f"**📅 Today (Est):** ₹{price_today:.2f}")
-        p2.success(f"**🔮 Tomorrow:** ₹{price_tomorrow:.2f}")
-
+        # Bollinger Bands Graph (THE MAIN CHART)
         fig = go.Figure()
-        chart_data = market_data.tail(60)
+        chart_data = market_data.tail(100)
         dates = chart_data.index
-        scaling_factor = price_today / chart_data['Gold'].iloc[-1]
-        fig.add_trace(go.Scatter(x=dates, y=chart_data['Gold'] * scaling_factor, mode='lines', name='Gold Price', line=dict(color='#FFD700', width=3)))
-        tomorrow_date = date.today() + timedelta(days=1)
-        fig.add_trace(go.Scatter(x=[tomorrow_date], y=[price_tomorrow], mode='markers', name='Prediction', marker=dict(color=signal_color, size=14, symbol='star')))
-        fig.update_layout(title="📈 Price Trend", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
+        
+        # Gold Price Line
+        fig.add_trace(go.Scatter(x=dates, y=chart_data['Gold'], mode='lines', name='Gold Price', line=dict(color='#FFD700', width=2)))
+        
+        # Bollinger Bands (Upper & Lower with Shade)
+        fig.add_trace(go.Scatter(x=dates, y=chart_data['BB_Upper'], mode='lines', name='Upper Band', line=dict(width=1, color='gray'), showlegend=False))
+        fig.add_trace(go.Scatter(x=dates, y=chart_data['BB_Lower'], mode='lines', name='Lower Band', line=dict(width=1, color='gray'), fill='tonexty', fillcolor='rgba(255, 255, 255, 0.1)', showlegend=True))
+        
+        fig.update_layout(title="📈 Bollinger Bands (Buy Low / Sell High)", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
         
         st.plotly_chart(fig)
 
     with right_col:
-        st.subheader("🧠 Technical Indicators")
+        st.subheader("📊 Key Levels")
+        
+        # New Metrics
+        k1, k2 = st.columns(2)
+        k1.metric("VIX (Fear)", f"{last_row['VIX']:.2f}")
+        k2.metric("Bond Yield", f"{last_row['Bond_Yield']:.2f}%")
+        
         tech_df = pd.DataFrame({
-            "Indicator": ["RSI (14)", "MACD", "Signal Line"],
-            "Value": [f"{last_row['RSI']:.2f}", f"{last_row['MACD']:.2f}", f"{last_row['Signal_Line']:.2f}"],
+            "Indicator": ["RSI", "Upper Band", "Lower Band"],
+            "Value": [f"{last_row['RSI']:.2f}", f"{last_row['BB_Upper']:.2f}", f"{last_row['BB_Lower']:.2f}"],
             "Status": [
-                "Overbought 🔴" if last_row['RSI'] > 70 else "Oversold 🟢" if last_row['RSI'] < 30 else "Neutral ⚪",
-                "Bullish 🟢" if last_row['MACD'] > last_row['Signal_Line'] else "Bearish 🔴", "-"
+                "Neutral" if 30 < last_row['RSI'] < 70 else "Extreme",
+                "Resistance (Sell)", "Support (Buy)"
             ]
         })
         st.dataframe(tech_df, hide_index=True)
         
         st.markdown("---")
-        st.write("##### 📰 Live News")
-        if len(news_entries) == 0:
-             st.write("No recent news.")
-        else:
+        st.write("##### 📰 News")
+        if len(news_entries) > 0:
             for title, link, score in news_entries:
-                if score > 0.05:
-                    icon = "🟢" 
-                    sentiment_label = "Positive"
-                    color = "green"
-                elif score < -0.05:
-                    icon = "🔴" 
-                    sentiment_label = "Negative"
-                    color = "red"
-                else:
-                    icon = "⚪"
-                    sentiment_label = "Neutral"
-                    color = "gray"
-                st.markdown(f"{icon} [**Read**]({link}) : {sentiment_label} - :{color}[{title[:60]}...]")
+                st.markdown(f"🔹 [{title[:50]}...]({link})")
+        else:
+            st.write("No News.")
 
-# --- TAB 2: HEATMAP ---
+# --- TAB 2: HEATMAP (UPDATED) ---
 with tab2:
     st.header("📊 Market Correlation Heatmap")
-    corr_data = market_data[['Gold', 'Silver', 'Oil', 'SMA_15', 'RSI', 'MACD']].tail(100).corr()
+    # Added VIX, Bond Yield, BB_Upper, BB_Lower to Heatmap
+    corr_data = market_data[['Gold', 'Silver', 'Oil', 'USD_Index', 'SP500', 'VIX', 'Bond_Yield', 'BB_Upper', 'BB_Lower']].tail(100).corr()
     fig_corr = px.imshow(corr_data, text_auto=True, color_continuous_scale='RdBu_r', title="100-Day Market Correlation Matrix")
     st.plotly_chart(fig_corr)
-    st.info("💡 **Tip:** Gold & Silver usually move together (Red). Gold & Oil might be opposite (Blue).")
+    st.info("💡 **Tip:** VIX (Fear) usually moves WITH Gold. Bond Yields usually move AGAINST Gold.")
 
 # --- TAB 3: MODEL BATTLE ---
 with tab3:
@@ -401,16 +423,15 @@ with tab3:
     fig_battle = px.bar(chart_df, x="Model", y="Predicted Gold Price ($)", color="Model", title="Tomorrow's Price Prediction")
     st.plotly_chart(fig_battle)
 
-# --- TAB 4: BACKTESTING ENGINE (NEW) ---
+# --- TAB 4: BACKTESTING ENGINE ---
 with tab4:
     st.header("📉 Backtesting: AI vs Real Market")
     st.markdown("This graph shows how accurate the AI has been over the last 6 months.")
     st.caption("🔵 **Blue Line** = Original Market Price | 🟠 **Orange Line** = AI Predicted Price")
     
-    # Check if we have enough data
     if len(market_data) > 60:
         check_data = market_data.tail(180).copy() # Last 6 months
-        X_check = check_data[['Gold', 'Silver', 'Oil', 'SMA_15', 'RSI', 'MACD', 'Signal_Line']].values
+        X_check = check_data[feature_cols].values
         
         # AI predicts past data
         check_data['AI_Predicted'] = best_model.predict(X_check)
