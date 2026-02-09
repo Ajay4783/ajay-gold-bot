@@ -19,25 +19,19 @@ st.set_page_config(page_title="Gold AI Pro Max", page_icon="🏆", layout="wide"
 # ==========================================
 # 🔐 ADMIN SETTINGS (SECURE MODE)
 # ==========================================
-# Ippo Token Code-la irukkaadhu. Streamlit Cloud "Secrets"-la irundhu edukkum.
 try:
     MY_BOT_TOKEN = st.secrets["MY_BOT_TOKEN"]
     MY_CHANNEL_NAME = st.secrets["MY_CHANNEL_NAME"]
 except:
-    # Local Laptop-la run panna mattum idhu work aagum
-    # (Safety-kaga inga dummy or empty-a viduvathu nallathu)
     MY_BOT_TOKEN = "TOKEN_REMOVED_FOR_SAFETY" 
     MY_CHANNEL_NAME = "@ajay_gold_2026"
-    st.warning("⚠️ Running in Local Mode. Token not found in Secrets.")
-# ==========================================
 
 # --- HEADER ---
 st.title("🏆 Gold Rate AI Predictor (Pro Version)")
-st.markdown("### 🤖 Advanced Analysis: RSI, MACD, Heatmaps & XGBoost")
+st.markdown("### 🤖 Advanced Analysis: Pro RSI, MACD & XGBoost")
 
 # --- TELEGRAM FUNCTION ---
 def send_telegram_alert(token, channel_id, message):
-    # Token illana function work aagaadhu (Crash aagaama thadukkum)
     if not token or token == "TOKEN_REMOVED_FOR_SAFETY":
         return False, "❌ Token Missing in Secrets!"
         
@@ -90,7 +84,7 @@ def get_live_gold_rate():
 
 live_price_today = get_live_gold_rate()
 
-# --- STEP 2: LOAD DATA (FIXED & ROBUST) ---
+# --- STEP 2: LOAD DATA (PRO RSI UPDATE) ---
 @st.cache_data
 def load_data(years):
     today = date.today().strftime("%Y-%m-%d")
@@ -125,10 +119,13 @@ def load_data(years):
 
     df['SMA_15'] = df['Gold'].rolling(window=15).mean()
     
+    # --- PRO RSI CALCULATION (Wilder's Method) ---
     delta = df['Gold'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
+    gain = (delta.where(delta > 0, 0))
+    loss = (-delta.where(delta < 0, 0))
+    avg_gain = gain.ewm(alpha=1/14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/14, adjust=False).mean()
+    rs = avg_gain / avg_loss
     df['RSI'] = 100 - (100 / (1 + rs))
 
     ema12 = df['Gold'].ewm(span=12, adjust=False).mean()
@@ -234,27 +231,62 @@ else:
     st.sidebar.info("No Profit / No Loss")
 
 # ==========================================
-# --- DECISION LOGIC ---
+# 🚀 DECISION LOGIC
+# ==========================================
 rsi_val = last_row['RSI']
-signal, signal_color, icon = "HOLD", "orange", "🟠"
-advice = "Market Stable. Hold."
+macd_val = last_row['MACD']
+signal_line_val = last_row['Signal_Line']
+sma_15 = last_row['SMA_15']
+current_price_usd = last_row['Gold']
 
-if total_change_pct > 0.001:
-    if rsi_val < 70: 
-        signal, signal_color, icon = "BUY", "green", "🟢"
-        advice = "Strong Upside & RSI Healthy! Accumulate."
-    else:
-        advice = "Price rising, but RSI High (Risky)."
+signal = "HOLD"
+signal_color = "orange"
+icon = "🟠"
+advice = "Market is choppy. Stay neutral."
+
+# --- AGGRESSIVE BUY ---
+if total_change_pct > 0:
+    if current_price_usd > sma_15:
+        signal = "BUY"
+        signal_color = "green"
+        icon = "🟢"
+        advice = "Strong Uptrend! AI & Trend aligned. BUY."
+    elif rsi_val < 70:
+        signal = "BUY"
+        signal_color = "green"
+        icon = "🟢"
+        advice = "AI predicts upside. Good entry."
+
+# --- MACD BREAKOUT BUY ---
+elif macd_val > signal_line_val and current_price_usd > sma_15:
+    signal = "BUY"
+    signal_color = "green"
+    icon = "🟢"
+    advice = "Technical Breakout (MACD Bullish). Trend Following."
+
+# --- SELL SCENARIOS ---
 elif total_change_pct < -0.001:
-    if rsi_val > 30: 
-        signal, signal_color, icon = "SELL", "red", "🔴"
-        advice = "Prices dropping. Wait."
-    else:
-        advice = "Price dropping, but RSI Low (Reversal possible)."
+    if current_price_usd < sma_15:
+        signal = "SELL"
+        signal_color = "red"
+        icon = "🔴"
+        advice = "Downtrend confirmed. SELL."
+    elif rsi_val > 30:
+        signal = "SELL"
+        signal_color = "red"
+        icon = "🔴"
+        advice = "AI predicts drop. Exit positions."
 
-# ================= TABS LOGIC =================
-tab1, tab2, tab3 = st.tabs(["🏠 Home Dashboard", "📊 Analysis & Insights", "🤖 Model Battle"])
+elif rsi_val > 80:
+     signal = "SELL"
+     signal_color = "red"
+     icon = "🔴"
+     advice = "Market Extremely Overbought (Risk High). Book Profit."
 
+# ================= 4 TABS LOGIC =================
+tab1, tab2, tab3, tab4 = st.tabs(["🏠 Home", "📊 Insights", "🤖 Model Battle", "📉 Backtest"])
+
+# --- TAB 1: HOME ---
 with tab1:
     left_col, right_col = st.columns([2, 1.2])
     with left_col:
@@ -271,7 +303,7 @@ with tab1:
             </div>
         """, unsafe_allow_html=True)
         
-        # Telegram Logic (With Safety Check)
+        # Telegram Logic
         last_signal_sent = get_last_signal()
         if signal != last_signal_sent:
             with st.spinner(f"🚀 Signal Changed. Sending Auto-Alert..."):
@@ -302,7 +334,8 @@ with tab1:
         tomorrow_date = date.today() + timedelta(days=1)
         fig.add_trace(go.Scatter(x=[tomorrow_date], y=[price_tomorrow], mode='markers', name='Prediction', marker=dict(color=signal_color, size=14, symbol='star')))
         fig.update_layout(title="📈 Price Trend", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
-        st.plotly_chart(fig, use_container_width=True)
+        
+        st.plotly_chart(fig)
 
     with right_col:
         st.subheader("🧠 Technical Indicators")
@@ -336,15 +369,18 @@ with tab1:
                     color = "gray"
                 st.markdown(f"{icon} [**Read**]({link}) : {sentiment_label} - :{color}[{title[:60]}...]")
 
+# --- TAB 2: HEATMAP ---
 with tab2:
     st.header("📊 Market Correlation Heatmap")
     corr_data = market_data[['Gold', 'Silver', 'Oil', 'SMA_15', 'RSI', 'MACD']].tail(100).corr()
     fig_corr = px.imshow(corr_data, text_auto=True, color_continuous_scale='RdBu_r', title="100-Day Market Correlation Matrix")
-    st.plotly_chart(fig_corr, use_container_width=True)
+    st.plotly_chart(fig_corr)
     st.info("💡 **Tip:** Gold & Silver usually move together (Red). Gold & Oil might be opposite (Blue).")
 
+# --- TAB 3: MODEL BATTLE ---
 with tab3:
-    st.header("🤖 Model Comparison: RF vs XGBoost")
+    st.header("🤖 Model Performance")
+    
     m1, m2 = st.columns(2)
     m1.metric("Random Forest Accuracy", f"{acc_rf*100:.2f}%")
     m2.metric("XGBoost Accuracy", f"{acc_xgb*100:.2f}%")
@@ -354,6 +390,7 @@ with tab3:
     else:
         st.success(f"🏆 **Random Forest** wins today! It is being used for prediction.")
 
+    # Prediction for Tomorrow
     pred_rf = model_rf.predict(last_values)[0]
     pred_xgb = model_xgb.predict(last_values)[0]
     
@@ -361,5 +398,32 @@ with tab3:
         "Model": ["Random Forest", "XGBoost"],
         "Predicted Gold Price ($)": [pred_rf, pred_xgb]
     })
-    fig_battle = px.bar(chart_df, x="Model", y="Predicted Gold Price ($)", color="Model", title="Model Price Prediction Comparison")
-    st.plotly_chart(fig_battle, use_container_width=True)
+    fig_battle = px.bar(chart_df, x="Model", y="Predicted Gold Price ($)", color="Model", title="Tomorrow's Price Prediction")
+    st.plotly_chart(fig_battle)
+
+# --- TAB 4: BACKTESTING ENGINE (NEW) ---
+with tab4:
+    st.header("📉 Backtesting: AI vs Real Market")
+    st.markdown("This graph shows how accurate the AI has been over the last 6 months.")
+    st.caption("🔵 **Blue Line** = Original Market Price | 🟠 **Orange Line** = AI Predicted Price")
+    
+    # Check if we have enough data
+    if len(market_data) > 60:
+        check_data = market_data.tail(180).copy() # Last 6 months
+        X_check = check_data[['Gold', 'Silver', 'Oil', 'SMA_15', 'RSI', 'MACD', 'Signal_Line']].values
+        
+        # AI predicts past data
+        check_data['AI_Predicted'] = best_model.predict(X_check)
+        check_data['Original_Target'] = check_data['Gold'].shift(-1) # Next day price
+        
+        check_data.dropna(inplace=True)
+        
+        fig_verify = go.Figure()
+        fig_verify.add_trace(go.Scatter(x=check_data.index, y=check_data['Original_Target'], mode='lines', name='Original Price (Actual)', line=dict(color='#00BFFF', width=2)))
+        fig_verify.add_trace(go.Scatter(x=check_data.index, y=check_data['AI_Predicted'], mode='lines', name='AI Predicted', line=dict(color='#FF4500', width=2, dash='dot')))
+        
+        fig_verify.update_layout(title="AI Accuracy Check (Past Performance)", hovermode="x unified")
+        
+        st.plotly_chart(fig_verify)
+    else:
+        st.warning("Not enough data to show backtesting graph.")
