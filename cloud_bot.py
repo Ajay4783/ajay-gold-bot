@@ -363,4 +363,3 @@ with tab3:
     })
     fig_battle = px.bar(chart_df, x="Model", y="Predicted Gold Price ($)", color="Model", title="Model Price Prediction Comparison")
     st.plotly_chart(fig_battle, use_container_width=True)
-
