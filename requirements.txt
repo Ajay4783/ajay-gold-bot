@@ -6,5 +6,6 @@ xgboost
 plotly
 textblob
 feedparser
-requests
 numpy
+requests
+mysql-connector-python
