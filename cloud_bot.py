@@ -50,8 +50,8 @@ def get_db_connection():
 def get_portfolio_status(email):
     try:
         conn = get_db_connection()
-        query = "SELECT * FROM trades WHERE username = %s ORDER BY id DESC LIMIT 1"
-        df = pd.read_sql(query, conn, params=(name,))
+        query = "SELECT * FROM trades WHERE email = %s ORDER BY id DESC LIMIT 1"
+        df = pd.read_sql(query, conn, params=(email,))
         conn.close()
         if not df.empty:
             last = df.iloc[0]
@@ -65,37 +65,29 @@ def execute_trade(name, email, action, live_price, grams, verdict):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM trades WHERE username = %s ORDER BY id DESC LIMIT 1", (name,))
+        cursor.execute("SELECT * FROM trades WHERE email = %s ORDER BY id DESC LIMIT 1", (email,))
         last = cursor.fetchone()
+        
         cash = float(last["cash_bal"]) if last else 100000.0
         gold = float(last["gold_bal"]) if last else 0.0
         avg_price = float(last["avg_buy_price"]) if last else 0.0
         total_amt = live_price * grams
         status = False
         msg = ""
+
         if action == "BUY":
-            if cash < total_amt:
-                conn.close()
-                return False, "❌ Insufficient Cash!"
+            if cash < total_amt: return False, "❌ Insufficient Cash!"
             new_cash = cash - total_amt
-            current_invested = gold * avg_price
-            new_invested = current_invested + total_amt
             new_gold = gold + grams
-            new_avg = new_invested / new_gold if new_gold > 0 else 0.0
-            msg = f"✅ Bought {grams}g @ ₹{live_price:.0f}"
-            status = True
+            new_avg = ((gold * avg_price) + total_amt) / new_gold if new_gold > 0 else 0
+            msg = f"✅ Bought {grams}g @ ₹{live_price:.0f}"; status = True
         elif action == "SELL":
-            if gold < grams:
-                conn.close()
-                return False, "❌ Not enough Gold!"
+            if gold < grams: return False, "❌ Not enough Gold!"
             new_cash = cash + total_amt
             new_gold = gold - grams
-            new_avg = avg_price if new_gold > 0 else 0.0
-            msg = f"✅ Sold {grams}g @ ₹{live_price:.0f}"
-            status = True
-        else:
-            conn.close()
-            return False, "❌ Unknown Action"
+            new_avg = avg_price if new_gold > 0 else 0
+            msg = f"✅ Sold {grams}g @ ₹{live_price:.0f}"; status = True
+
         if status:
             sql = """INSERT INTO trades (username, email, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
@@ -113,7 +105,7 @@ def execute_trade(name, email, action, live_price, grams, verdict):
 def get_trade_history(email):
     try:
         conn = get_db_connection()
-        df = pd.read_sql("SELECT * FROM trades WHERE username = %s ORDER BY id DESC", conn, params=(name,))
+        df = pd.read_sql("SELECT * FROM trades WHERE email= %s ORDER BY id DESC", conn, params=(email,))
         conn.close()
         return df
     except Exception:
@@ -124,9 +116,9 @@ def reset_account(name, email):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM trades WHERE username = %s", (name,))
+        cursor.execute("DELETE FROM trades WHERE email = %s", (email,))
         sql = """INSERT INTO trades (username, email, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
-                 VALUES (%s, %s, 'INIT', 0.0, 0.0, 0.0, 100000.0, 0.0, 0.0, 'START')"""
+                 VALUES (%s, %s, %s, 'INIT', 0.0, 0.0, 0.0, 100000.0, 0.0, 0.0, 'START')"""
         cursor.execute(sql, (name, email, date.today()))
         conn.commit()
         conn.close()
