@@ -98,8 +98,8 @@ def execute_trade(name, action, live_price, grams, verdict):
             return False, "❌ Unknown Action"
         if status:
             sql = """INSERT INTO trades (username, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
-                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-            val = (date.today(), action, live_price, grams, total_amt, new_cash, new_gold, new_avg, verdict)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            val = (name, date.today(), action, live_price, grams, total_amt, new_cash, new_gold, new_avg, verdict)
             cursor.execute(sql, val)
             conn.commit()
             conn.close()
