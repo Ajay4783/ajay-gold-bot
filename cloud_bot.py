@@ -47,7 +47,7 @@ def get_db_connection():
         database=st.secrets["mysql"]["database"]
     )
 
-def get_portfolio_status(name):
+def get_portfolio_status(email):
     try:
         conn = get_db_connection()
         query = "SELECT * FROM trades WHERE username = %s ORDER BY id DESC LIMIT 1"
@@ -61,7 +61,7 @@ def get_portfolio_status(name):
     except Exception as e:
         return 100000.0, 0.0, 0.0, pd.DataFrame()
 
-def execute_trade(name, action, live_price, grams, verdict):
+def execute_trade(name, email, action, live_price, grams, verdict):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -97,9 +97,9 @@ def execute_trade(name, action, live_price, grams, verdict):
             conn.close()
             return False, "❌ Unknown Action"
         if status:
-            sql = """INSERT INTO trades (username, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
-                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-            val = (name, date.today(), action, live_price, grams, total_amt, new_cash, new_gold, new_avg, verdict)
+            sql = """INSERT INTO trades (username, email, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            val = (name, email, date.today(), action, live_price, grams, total_amt, new_cash, new_gold, new_avg, verdict)
             cursor.execute(sql, val)
             conn.commit()
             conn.close()
@@ -110,7 +110,7 @@ def execute_trade(name, action, live_price, grams, verdict):
         return False, str(e)
     
 
-def get_trade_history(name):
+def get_trade_history(email):
     try:
         conn = get_db_connection()
         df = pd.read_sql("SELECT * FROM trades WHERE username = %s ORDER BY id DESC", conn, params=(name,))
@@ -120,14 +120,14 @@ def get_trade_history(name):
         return pd.DataFrame()
     
 
-def reset_account(name):
+def reset_account(name, email):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM trades WHERE username = %s", (name,))
-        sql = """INSERT INTO trades (username, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
+        sql = """INSERT INTO trades (username, email, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
                  VALUES (%s, %s, 'INIT', 0.0, 0.0, 0.0, 100000.0, 0.0, 0.0, 'START')"""
-        cursor.execute(sql, (name, date.today()))
+        cursor.execute(sql, (name, email, date.today()))
         conn.commit()
         conn.close()
         return True
@@ -140,6 +140,11 @@ st.sidebar.markdown("---")
 st.sidebar.header("🏛️ Tax & Duty Settings")
 tax_percentage = st.sidebar.slider("Import Duty + GST (%)", 0.0, 50.0, 9.2, 0.1)
 user_name = st.sidebar.text_input("👤 Enter Your Name", value="Guest").strip()
+user_email = st.sidebar.text_input("📧 Enter Your Email", value="test@example.com").strip()
+
+if not user_email or "@" not in user_email:
+    st.warning("Please enter a valid email address to proceed!")
+    st.stop()
 
 if not user_name:
     st.warning("Please enter your name to start trading!")
@@ -149,18 +154,18 @@ if MY_CHANNEL_NAME:
     st.sidebar.success(f"✅ Connected: **{MY_CHANNEL_NAME}**")
 
 
-def initialize_user(name):
+def initialize_user(name, email):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM trades WHERE username = %s", (name,))
+    cursor.execute("SELECT COUNT(*) FROM trades WHERE email = %s", (email,))
+    
     if cursor.fetchone()[0] == 0:
-        sql = """INSERT INTO trades (username, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
-                 VALUES (%s, %s, 'INIT', 0.0, 0.0, 0.0, 100000.0, 0.0, 0.0, 'START')"""
-        cursor.execute(sql, (name, date.today()))
+        sql = """INSERT INTO trades (username, email, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
+                 VALUES (%s, %s, %s, 'INIT', 0.0, 0.0, 0.0, 100000.0, 0.0, 0.0, 'START')"""
+        cursor.execute(sql, (name, email, date.today()))
         conn.commit()
     conn.close()
-
-initialize_user(user_name)
+initialize_user(user_name, user_email)
 
 @st.cache_data(ttl=3600)
 def get_usd_inr_rate():
@@ -535,18 +540,20 @@ with tab4:
         st.plotly_chart(fig_bt)
     else:
         st.warning("Need more data for 1-year backtest.")
-
 with tab5:
     st.header(f"📝 Pro Paper Trading ({user_name}'s Account)")
+    st.caption(f"📧 Active Email: {user_email}")
     
-    curr_cash, curr_gold, avg_buy_price, _ = get_portfolio_status(user_name)
-    history_df = get_trade_history(user_name) 
+
+    curr_cash, curr_gold, avg_buy_price, _ = get_portfolio_status(user_email)
+    history_df = get_trade_history(user_email) 
 
 
     invested_value = curr_gold * avg_buy_price
     current_value = curr_gold * price_today_inr
     pnl = current_value - invested_value
     total_net_worth = curr_cash + current_value
+
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("💰 Cash Available", f"₹{curr_cash:,.0f}")
@@ -568,8 +575,7 @@ with tab5:
             st.subheader("🟢 Buy Gold")
             buy_grams = st.number_input("Grams to Buy", min_value=0.0, max_value=1000.0, value=1.0, step=0.1, key="b_db")
             if st.form_submit_button("Buy Now"):
-              
-                success, msg = execute_trade(user_name, "BUY", price_today_inr, buy_grams, signal)
+                success, msg = execute_trade(user_name, user_email, "BUY", price_today_inr, buy_grams, signal)
                 if success:
                     st.success(msg)
                     st.rerun()
@@ -581,7 +587,7 @@ with tab5:
             st.subheader("🔴 Sell Gold")
             sell_grams = st.number_input("Grams to Sell", min_value=0.0, max_value=1000.0, value=1.0, step=0.1, key="s_db")
             if st.form_submit_button("Sell Now"):
-                success, msg = execute_trade(user_name, "SELL", price_today_inr, sell_grams, signal)
+                success, msg = execute_trade(user_name, user_email, "SELL", price_today_inr, sell_grams, signal)
                 if success:
                     st.success(msg)
                     st.rerun()
@@ -591,13 +597,13 @@ with tab5:
     st.markdown("---")
 
     if st.button(f"⚠️ Reset Portfolio for {user_name}"):
-        if reset_account(user_name):
-            st.success(f"Portfolio for {user_name} reset successfully!")
+        if reset_account(user_name, user_email):
+            st.success(f"Portfolio for {user_email} reset successfully!")
             st.rerun()
         else:
             st.error("Failed to reset portfolio.")
 
-    st.subheader(f"📜 {user_name}'s Transaction History")
+    st.subheader(f"📜 Transaction History ({user_email})")
     if not history_df.empty:
         st.dataframe(history_df, hide_index=True, use_container_width=True)
     else:
