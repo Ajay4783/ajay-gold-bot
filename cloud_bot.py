@@ -50,8 +50,8 @@ def get_db_connection():
 def get_portfolio_status():
     try:
         conn = get_db_connection()
-        query = "SELECT * FROM trades ORDER BY id DESC LIMIT 1"
-        df = pd.read_sql(query, conn)
+        query = "SELECT * FROM trades WHERE username = %s ORDER BY id DESC LIMIT 1"
+        df = pd.read_sql(query, conn, params=(name,))
         conn.close()
         if not df.empty:
             last = df.iloc[0]
@@ -61,7 +61,7 @@ def get_portfolio_status():
     except Exception as e:
         return 100000.0, 0.0, 0.0, pd.DataFrame()
 
-def execute_trade(action, live_price, grams, verdict):
+def execute_trade(name, action, live_price, grams, verdict):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -97,7 +97,7 @@ def execute_trade(action, live_price, grams, verdict):
             conn.close()
             return False, "❌ Unknown Action"
         if status:
-            sql = """INSERT INTO trades (trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
+            sql = """INSERT INTO trades (username, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
                      VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"""
             val = (date.today(), action, live_price, grams, total_amt, new_cash, new_gold, new_avg, verdict)
             cursor.execute(sql, val)
@@ -108,6 +108,7 @@ def execute_trade(action, live_price, grams, verdict):
         return False, "Transaction Failed"
     except Exception as e:
         return False, str(e)
+    
 
 def reset_account():
     try:
@@ -136,9 +137,28 @@ years = st.sidebar.slider("📅 AI Learning Period (Years)", 2, 5, 2)
 st.sidebar.markdown("---")
 st.sidebar.header("🏛️ Tax & Duty Settings")
 tax_percentage = st.sidebar.slider("Import Duty + GST (%)", 0.0, 50.0, 9.2, 0.1)
+user_name = st.sidebar.text_input("👤 Enter Your Name", value="Guest").strip()
+
+if not user_name:
+    st.warning("Please enter your name to start trading!")
+    st.stop()
 
 if MY_CHANNEL_NAME:
     st.sidebar.success(f"✅ Connected: **{MY_CHANNEL_NAME}**")
+
+
+def initialize_user(name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM trades WHERE username = %s", (name,))
+    if cursor.fetchone()[0] == 0:
+        sql = """INSERT INTO trades (username, trade_date, action, price, grams, amount, cash_bal, gold_bal, avg_buy_price, ai_verdict) 
+                 VALUES (%s, %s, 'INIT', 0.0, 0.0, 0.0, 100000.0, 0.0, 0.0, 'START')"""
+        cursor.execute(sql, (name, date.today()))
+        conn.commit()
+    conn.close()
+
+initialize_user(user_name)
 
 @st.cache_data(ttl=3600)
 def get_usd_inr_rate():
