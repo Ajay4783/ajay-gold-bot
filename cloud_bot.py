@@ -65,7 +65,7 @@ def execute_trade(name, action, live_price, grams, verdict):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM trades ORDER BY id DESC LIMIT 1")
+        cursor.execute("SELECT * FROM trades WHERE username = %s ORDER BY id DESC LIMIT 1", (name,))
         last = cursor.fetchone()
         cash = float(last["cash_bal"]) if last else 100000.0
         gold = float(last["gold_bal"]) if last else 0.0
@@ -464,7 +464,7 @@ with tab1:
         t1, t2 = st.columns(2)
         t1.metric("🛑 Stop Loss", f"₹{stop_loss_inr:,.0f}")
         t2.metric("🎯 Target 1", f"₹{target_r1:,.0f}")
-        st.write("##### 📊 Drivers")
+        st.write("#### 📊 Drivers")
         st.caption(f"Fear/Greed: {fear_greed_score:.0f}/100")
         st.caption(f"Trend Strength (ADX): {adx_val:.1f}")
         st.caption(f"Weekly Trend: {'BULLISH' if weekly_bullish else 'BEARISH'}")
